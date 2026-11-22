@@ -381,7 +381,7 @@ class DjiBatteryApp:
             ("cycles", "Liczba cykli (0x4340, uint16)", "0"),
             ("dji_sn", "Numer seryjny DJI S/N (0x494C)", "1U5X0BBEXP05DB"),
             ("design_cap", "Design Capacity [mAh] (0x4726)", "2400"),
-            ("actual_cap", "Actual Capacity / Qmax [mAh] (0x4300)", "2400"),
+            ("actual_cap", "Actual Capacity / Qmax [mAh] (0x4306)", "2400"),
             ("design_energy", "Design Energy [cWh] (0x4728)", "1728"),
             ("design_volt", "Design Voltage [mV] (0x472A)", "7200"),
             ("mfg_name", "Nazwa producenta (0x4070, ASCII)", "SDI"),
@@ -416,6 +416,7 @@ class DjiBatteryApp:
             ("Wyczyść DJI PF2 (0x4062 -> 01 23 45 67)", lambda: self.run_async(self.cmd_clear_pf2)),
             ("Wyczyść błąd 30074 (0x4A60 -> 00 00)", lambda: self.run_async(lambda: self.send_simple("z", 0.7))),
             ("Reset Lifetime Data (0x0028)", lambda: self.run_async(lambda: self.send_simple("l", 0.7))),
+            ("Napraw FCC=0 / Przywróć 0x4300 (39 00 1E 00 00 00)", lambda: self.run_async(self.cmd_restore_4300)),
         ]
         for txt, cb in fbtns:
             ttk.Button(rpanel, text=txt, command=cb).pack(fill="x", pady=2)
@@ -844,6 +845,15 @@ class DjiBatteryApp:
         self._send_and_collect("w 4062 01 23 45 67", 0.7)
         self._send_and_collect("b 4060", 0.6)
 
+    def cmd_restore_4300(self):
+        self.log(">>> Przywracanie nagłówka Gas Gauging 0x4300 -> 39 00 1E 00 00 00")
+        if not self.cmd_unseal():
+            self.log("[!] Błąd wejścia w Full Access (SEC=1).")
+            return
+        self._send_and_collect("w 4300 39 00 1E 00 00 00", 0.7)
+        self._send_and_collect("r", 1.5)
+        self.cmd_diag()
+
     def cmd_full_unlock_and_zero(self):
         self.log("=== START PEŁNEGO ODBLOKOWANIA + 0 CYKLI ===")
         if not self.cmd_unseal():
@@ -870,7 +880,7 @@ class DjiBatteryApp:
         if not self.cmd_unseal():
             return
         b_cyc = self._read_flash_bytes("4340")
-        b_qmax = self._read_flash_bytes("4300")
+        b_qmax = self._read_flash_bytes("4306")
         b_sn  = self._read_flash_bytes("494B")
         b_des = self._read_flash_bytes("4726")
         b_mfg = self._read_flash_bytes("4070")
@@ -880,7 +890,9 @@ class DjiBatteryApp:
         def _upd():
             if len(b_cyc) >= 2:
                 self.edit_vars["cycles"].set(str(b_cyc[0] | (b_cyc[1] << 8)))
-            if len(b_qmax) >= 2:
+            if len(b_qmax) >= 10:
+                self.edit_vars["actual_cap"].set(str(b_qmax[8] | (b_qmax[9] << 8)))
+            elif len(b_qmax) >= 2:
                 self.edit_vars["actual_cap"].set(str(b_qmax[0] | (b_qmax[1] << 8)))
             if len(b_sn) >= 2:
                 n = min(b_sn[0], len(b_sn) - 1, 14)
@@ -946,9 +958,9 @@ class DjiBatteryApp:
         if "design_cap" in vals:
             write_u16("4726", vals["design_cap"])
         if "actual_cap" in vals:
-            write_u16("4300", vals["actual_cap"])
-            write_u16("4302", vals["actual_cap"])
-            write_u16("4304", vals["actual_cap"])
+            write_u16("4306", vals["actual_cap"])
+            write_u16("4308", vals["actual_cap"])
+            write_u16("430E", vals["actual_cap"])
         if "design_energy" in vals:
             write_u16("4728", vals["design_energy"])
         if "design_volt" in vals:
