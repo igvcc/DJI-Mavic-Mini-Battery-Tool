@@ -381,6 +381,7 @@ class DjiBatteryApp:
             ("cycles", "Liczba cykli (0x4340, uint16)", "0"),
             ("dji_sn", "Numer seryjny DJI S/N (0x494C)", "1U5X0BBEXP05DB"),
             ("design_cap", "Design Capacity [mAh] (0x4726)", "2400"),
+            ("actual_cap", "Actual Capacity / Qmax [mAh] (0x4300)", "2400"),
             ("design_energy", "Design Energy [cWh] (0x4728)", "1728"),
             ("design_volt", "Design Voltage [mV] (0x472A)", "7200"),
             ("mfg_name", "Nazwa producenta (0x4070, ASCII)", "SDI"),
@@ -869,6 +870,7 @@ class DjiBatteryApp:
         if not self.cmd_unseal():
             return
         b_cyc = self._read_flash_bytes("4340")
+        b_qmax = self._read_flash_bytes("4300")
         b_sn  = self._read_flash_bytes("494B")
         b_des = self._read_flash_bytes("4726")
         b_mfg = self._read_flash_bytes("4070")
@@ -878,6 +880,8 @@ class DjiBatteryApp:
         def _upd():
             if len(b_cyc) >= 2:
                 self.edit_vars["cycles"].set(str(b_cyc[0] | (b_cyc[1] << 8)))
+            if len(b_qmax) >= 2:
+                self.edit_vars["actual_cap"].set(str(b_qmax[0] | (b_qmax[1] << 8)))
             if len(b_sn) >= 2:
                 n = min(b_sn[0], len(b_sn) - 1, 14)
                 self.edit_vars["dji_sn"].set(bytes(b_sn[1:1+n]).decode("ascii", errors="ignore"))
@@ -941,6 +945,10 @@ class DjiBatteryApp:
             self._send_and_collect("w 4998 " + " ".join(f"{x:02X}" for x in p_klv_sn), 0.7)
         if "design_cap" in vals:
             write_u16("4726", vals["design_cap"])
+        if "actual_cap" in vals:
+            write_u16("4300", vals["actual_cap"])
+            write_u16("4302", vals["actual_cap"])
+            write_u16("4304", vals["actual_cap"])
         if "design_energy" in vals:
             write_u16("4728", vals["design_energy"])
         if "design_volt" in vals:
